@@ -8,13 +8,13 @@ Supported Versions
 
 | Terraform version | minimum provider version |maxmimum provider version
 | ---- | ---- | ----|
-| >= 1.8.x	| 0.1.1	| latest |
+| >= 1.10.x	| 0.1.1	| latest |
 
 Requirements
 ------------
 
--	[Terraform](https://www.terraform.io/downloads.html) 1.8.x
--	[Go](https://golang.org/doc/install) 1.19 (to build the provider plugin)
+-	[Terraform](https://www.terraform.io/downloads.html) 1.10.x
+-	[Go](https://golang.org/doc/install) 1.23 (to build the provider plugin)
 
 Local Installation
 ------------------
@@ -32,7 +32,11 @@ Local Installation
       }
     }
 
-    provider "st-azuread" {}
+    provider "st-azuread" {
+      client_id     = "..."
+      client_secret = "..."
+      tenant_id     = "..."
+    }
     ```
 
 Why Custom Provider
@@ -44,22 +48,29 @@ scenario. The reason behind every resources and data sources are stated as below
 
 ### Resources
 
-- **st-azuread_auth_method_policy**
+- **st-azuread_named_location**
 
-  - Official AzureAD Terraform provider does not have the ability to manage the
-    authentication method policies on Microsoft Entra ID.
+  - The official AzureAD Terraform provider's [*azuread_named_location*](https://registry.terraform.io/providers/hashicorp/azuread/3.3.0/docs/resources/named_location) resource may encounter API rate limiting issues when provisioning multiple resources concurrently.
+  To enhance reliability and scalability, a backoff retry mechanism has been integrated, ensuring successful creation
+  of multiple resources simultaneously.
 
 ### Data Sources
 
 - **st-azuread_auth_strength_policy**
 
-  - Official AzureAD Terraform provider does not have the ability to obtain the
-    id or name of the authentication strength policy on Microsoft Entra ID via
-    id or name.
+  - The official AzureAD Terraform provider does not currently support retrieving authentication strength policies in
+  Microsoft Entra ID by ID or name. This data source able to support retrieving authentication strength policies in
+  Microsoft Entra ID by ID or name.
+
+- **st-azuread_groups**
+
+  - The official AzureAD Terraform provider's [*azuread_groups*](https://registry.terraform.io/providers/hashicorp/azuread/3.3.0/docs/data-sources/groups)  data source separates display_names and object_ids into separate lists, which might lead to potential errors.
+  This data source uses a list of objects for groups, ensuring that each group's display_name is directly associated with
+  its corresponding id, thereby reducing the risk of mismatches and improving data integrity.
 
 References
 ----------
 
 - Website: https://www.terraform.io
 - Terraform Plugin Framework: https://developer.hashicorp.com/terraform/tutorials/providers-plugin-framework
-- Byteplus official Terraform provider: https://github.com/hashicorp/terraform-provider-azuread
+- AzureAD official Terraform provider: https://github.com/hashicorp/terraform-provider-azuread
