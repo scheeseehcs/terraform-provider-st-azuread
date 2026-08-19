@@ -204,20 +204,54 @@ func (d *groupsDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 		}
 	}
 
-	for _, group := range result.GetValue() {
-		name := group.GetDisplayName()
-		id := group.GetId()
-		if returnAll || hasPrefix {
-			groups = append(groups, &groupModel{
-				DisplayName: types.StringValue(*name),
-				ID:          types.StringValue(*id),
-			})
-		} else if _, ok := inputNames[*name]; ok {
-			groups = append(groups, &groupModel{
-				DisplayName: types.StringValue(*name),
-				ID:          types.StringValue(*id),
-			})
-			delete(inputNames, *name)
+	pageNum := 1
+	for {
+		for _, group := range result.GetValue() {
+			name := group.GetDisplayName()
+			id := group.GetId()
+			if returnAll || hasPrefix {
+				groups = append(groups, &groupModel{
+					DisplayName: types.StringValue(*name),
+					ID:          types.StringValue(*id),
+				})
+			} else if _, ok := inputNames[*name]; ok {
+				groups = append(groups, &groupModel{
+					DisplayName: types.StringValue(*name),
+					ID:          types.StringValue(*id),
+				})
+				delete(inputNames, *name)
+			}
+		}
+
+		nextLink := result.GetOdataNextLink()
+		if nextLink == nil || *nextLink == "" {
+			break
+		}
+
+		pageNum++
+		requestConfig := &graphGroups.GroupsRequestBuilderGetRequestConfiguration{
+			QueryParameters: queryParams,
+		}
+
+		backoff = time.Second
+		for attempt := 1; attempt <= maxRetries; attempt++ {
+			result, err = d.client.Groups().Get(ctx, requestConfig)
+			if err == nil {
+				break
+			}
+
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				resp.Diagnostics.AddError("Graph API Error", fmt.Sprintf("Request canceled or timed out on page %d: %s", pageNum, err.Error()))
+				return
+			}
+
+			time.Sleep(backoff)
+			backoff *= 2
+		}
+
+		if err != nil {
+			resp.Diagnostics.AddError("Graph API Error", fmt.Sprintf("Failed to fetch page %d after retries: %s", pageNum, err.Error()))
+			return
 		}
 	}
 
