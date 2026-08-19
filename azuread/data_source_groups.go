@@ -154,9 +154,11 @@ func (d *groupsDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 		filterStr = &filter
 	}
 
+	var top int32 = 999
 	queryParams := &graphGroups.GroupsRequestBuilderGetQueryParameters{
 		Filter: filterStr,
 		Select: []string{"id", "displayName"},
+		Top:    &top,
 	}
 
 	config := &graphGroups.GroupsRequestBuilderGetRequestConfiguration{
@@ -177,7 +179,6 @@ func (d *groupsDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 			break
 		}
 
-		// If context was canceled, no point retrying.
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			resp.Diagnostics.AddError("Graph API Error", fmt.Sprintf("Request canceled or timed out: %s", err.Error()))
 			return
@@ -204,11 +205,15 @@ func (d *groupsDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 		}
 	}
 
-	pageNum := 1
-	for {
+	if result.GetValue() != nil {
 		for _, group := range result.GetValue() {
 			name := group.GetDisplayName()
 			id := group.GetId()
+
+			if name == nil || id == nil {
+				continue
+			}
+
 			if returnAll || hasPrefix {
 				groups = append(groups, &groupModel{
 					DisplayName: types.StringValue(*name),
@@ -222,37 +227,15 @@ func (d *groupsDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 				delete(inputNames, *name)
 			}
 		}
+	}
 
-		nextLink := result.GetOdataNextLink()
-		if nextLink == nil || *nextLink == "" {
-			break
-		}
-
-		pageNum++
-		requestConfig := &graphGroups.GroupsRequestBuilderGetRequestConfiguration{
-			QueryParameters: queryParams,
-		}
-
-		backoff = time.Second
-		for attempt := 1; attempt <= maxRetries; attempt++ {
-			result, err = d.client.Groups().Get(ctx, requestConfig)
-			if err == nil {
-				break
-			}
-
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				resp.Diagnostics.AddError("Graph API Error", fmt.Sprintf("Request canceled or timed out on page %d: %s", pageNum, err.Error()))
-				return
-			}
-
-			time.Sleep(backoff)
-			backoff *= 2
-		}
-
-		if err != nil {
-			resp.Diagnostics.AddError("Graph API Error", fmt.Sprintf("Failed to fetch page %d after retries: %s", pageNum, err.Error()))
-			return
-		}
+	nextLink := result.GetOdataNextLink()
+	if nextLink != nil && *nextLink != "" {
+		resp.Diagnostics.AddWarning(
+			"Large number of groups",
+			"Your organization has more than 999 groups. Some groups might not be returned. "+
+				"Consider filtering by `display_name_prefix` or `display_names` to narrow down the results.",
+		)
 	}
 
 	if hasPrefix && len(groups) == 0 {
@@ -263,7 +246,6 @@ func (d *groupsDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 		return
 	}
 
-	// Handle missing groups, when ignore_missing is set to false.
 	if len(inputNames) > 0 && !ignoreMissing {
 		missing := make([]string, 0, len(inputNames))
 		for name := range inputNames {
