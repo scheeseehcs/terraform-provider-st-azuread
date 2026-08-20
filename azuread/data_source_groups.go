@@ -179,6 +179,7 @@ func (d *groupsDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 			break
 		}
 
+		// If context was canceled, no point retrying.
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			resp.Diagnostics.AddError("Graph API Error", fmt.Sprintf("Request canceled or timed out: %s", err.Error()))
 			return
@@ -246,6 +247,7 @@ func (d *groupsDataSource) Read(ctx context.Context, req datasource.ReadRequest,
 		return
 	}
 
+	// Handle missing groups, when ignore_missing is set to false.
 	if len(inputNames) > 0 && !ignoreMissing {
 		missing := make([]string, 0, len(inputNames))
 		for name := range inputNames {
